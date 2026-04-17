@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  getCopilotData: (cookie: string) => ipcRenderer.invoke('get-copilot-data', cookie),
-  loginWithGitHub: () => ipcRenderer.invoke('login-with-github'),
-  onMainProcessMessage: (callback: (message: string) => void) => {
-    ipcRenderer.on('main-process-message', (_event, value) => callback(value))
+  getCopilotData: () => ipcRenderer.invoke('get-copilot-data'),
+  loginWithGitHub: () => ipcRenderer.invoke('get-github-cookies'),
+  onRefreshData: (callback: () => void) => {
+    ipcRenderer.on('refresh-data', () => callback())
   }
 })

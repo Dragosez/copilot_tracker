@@ -1,12 +1,16 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, screen, session } from 'electron'
 import path from 'node:path'
-import puppeteer from 'puppeteer-core'
-import { Launcher } from 'chrome-launcher'
 
 // The built directory structure
 const DIST_PATH = path.join(__dirname, '../dist')
 process.env.DIST = DIST_PATH
 process.env.VITE_PUBLIC = app.isPackaged ? DIST_PATH : path.join(DIST_PATH, '../public')
+
+// Handle Linux Wayland/Sandbox issues
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('no-sandbox')
+  app.commandLine.appendSwitch('password-store', 'basic')
+}
 
 let win: BrowserWindow | null
 let tray: Tray | null
@@ -22,8 +26,10 @@ function createWindow() {
     resizable: false,
     alwaysOnTop: true,
     transparent: true,
+    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,
     },
   })
 
@@ -39,48 +45,49 @@ function createWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH5AgKCQ8XNn5jSgAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLm3pAAAAXUlEQVQ4y2NgGAWjYBSMglEwCkbBSAcM+f//PwM+fvyYgYGBgYGBAUgeWR5ZHi6PNo8un1geWR6SPLY8unxS88HCHj0+vflgYI8en958MLBHj09vPnjYoycgf8AoGAWjAAAyAxfD8F6VAAAAAElFTkSuQmCC')
+  const iconPath = path.join(process.env.VITE_PUBLIC, 'tray-icon.png');
+  tray = new Tray(iconPath)
   
-  tray = new Tray(icon)
-  tray.setToolTip('Copilot Tracker')
-
-  tray.on('click', () => {
-    if (win?.isVisible()) {
-      win.hide()
-    } else {
-      showWindow()
-    }
-  })
-
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Refresh', click: () => win?.webContents.send('refresh-data') },
+    { label: 'Show Tracker', click: () => showWindow() },
+    { label: 'Refresh Data', click: () => {
+      if (win) win.webContents.send('refresh-data');
+    }},
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ])
+
+  tray.setToolTip('Copilot Tracker')
+  tray.setContextMenu(contextMenu)
   
-  tray.on('right-click', () => {
-    tray?.popUpContextMenu(contextMenu)
+  tray.on('click', () => {
+    showWindow()
   })
 }
 
 function showWindow() {
-  if (!win || !tray) return
-
-  const trayBounds = tray.getBounds()
-  const { width, height } = win.getBounds()
+  if (!win) return
   
-  win.setPosition(
-    trayBounds.x - Math.floor(width / 2) + Math.floor(trayBounds.width / 2),
-    trayBounds.y + trayBounds.height + 5
-  )
+  const cursorPoint = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursorPoint)
+  const x = Math.round(display.workArea.x + display.workArea.width - 360)
+  const y = display.workArea.y + 10
   
+  win.setPosition(x, y)
   win.show()
-  win.focus()
 }
 
 app.whenReady().then(() => {
   createWindow()
   createTray()
+
+  if (process.platform === 'linux') {
+    new Notification({
+      title: 'Copilot Tracker',
+      body: 'App started! Click the icon in the top bar to see your usage.',
+      icon: path.join(process.env.VITE_PUBLIC, 'tray-icon.png')
+    }).show()
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -90,25 +97,27 @@ app.on('window-all-closed', () => {
   }
 })
 
-// IPC Handlers
-ipcMain.handle('login-with-github', async () => {
+ipcMain.handle('get-github-cookies', async () => {
   return new Promise((resolve, reject) => {
     const loginWin = new BrowserWindow({
-      width: 500,
-      height: 700,
-      show: true,
-      title: 'Login to GitHub',
-      autoHideMenuBar: true
+      width: 600,
+      height: 800,
+      webPreferences: {
+        sandbox: false
+      }
     });
 
     loginWin.loadURL('https://github.com/login');
 
     const checkCookies = async () => {
-      const cookies = await loginWin.webContents.session.cookies.get({ domain: '.github.com' });
-      const sessionCookie = cookies.find(c => c.name === 'user_session' || c.name === '__Host-user_session_same_site');
-      
-      if (sessionCookie) {
-        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      const url = loginWin.webContents.getURL();
+      if (url === 'https://github.com/' || url === 'https://github.com') {
+        const allCookies = await session.defaultSession.cookies.get({ domain: 'github.com' });
+        
+        const userSession = allCookies.find(c => c.name === 'user_session');
+        if (!userSession) return;
+        
+        const cookieString = allCookies.map(c => `${c.name}=${c.value}`).join('; ');
         loginWin.close();
         resolve(cookieString);
       }
@@ -123,82 +132,72 @@ ipcMain.handle('login-with-github', async () => {
   });
 });
 
-ipcMain.handle('get-copilot-data', async (_event, cookie: string) => {
-  let browser;
-  try {
-    const chromePath = Launcher.getFirstInstallation();
-    if (!chromePath) throw new Error('Chrome/Chromium not found');
-
-    browser = await puppeteer.launch({
-      executablePath: chromePath,
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+ipcMain.handle('get-copilot-data', async () => {
+  return new Promise((resolve, reject) => {
+    const scraperWin = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        sandbox: false,
+        offscreen: true
+      }
     });
 
-    const page = await browser.newPage();
-    
-    const cookies = cookie.split(';').map(pair => {
-      const [name, ...value] = pair.trim().split('=');
-      return {
-        name: name || '',
-        value: value.join('=') || '',
-        domain: '.github.com',
-        path: '/'
-      };
-    }).filter(c => c.name && c.value);
+    // Use the default session which already has the cookies from the login window
+    scraperWin.loadURL('https://github.com/settings/billing/premium_request_analytics');
 
-    await page.setCookie(...cookies);
-
-    await page.goto('https://github.com/settings/billing/premium_request_analytics', {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    });
-
-    const data = await page.evaluate(() => {
-      const getTextByLabel = (label: string) => {
-        const elements = Array.from(document.querySelectorAll('div, span, p'));
-        const target = elements.find(el => el.textContent?.trim().includes(label));
-        if (target && target.nextElementSibling) {
-           return target.nextElementSibling.textContent?.trim() || '';
-        }
-        return '';
-      };
-
-      const billedText = getTextByLabel('Billed premium requests') || '$0.00';
+    scraperWin.webContents.on('did-finish-load', async () => {
+      const currentUrl = scraperWin.webContents.getURL();
       
-      const consumedContainer = (Array.from(document.querySelectorAll('div, p, span')).find(el => 
-        el.textContent?.includes('Included premium requests consumed') && el.children.length === 0
-      ) || Array.from(document.querySelectorAll('div')).find(el => el.textContent?.includes('Included premium requests consumed'))) as HTMLElement | null;
-
-      let consumed = '0';
-      let total = '300';
-      
-      if (consumedContainer) {
-        const text = consumedContainer.parentElement?.innerText || consumedContainer.innerText;
-        const match = text.match(/([\d.]+)\s+of\s+([\d.]+)/);
-        if (match) {
-          consumed = match[1];
-          total = match[2];
-        }
+      if (currentUrl.includes('/login') || currentUrl.includes('/sessions/two-factor')) {
+        scraperWin.destroy();
+        reject(new Error('AUTH_EXPIRED'));
+        return;
       }
 
-      return {
-        billed: billedText,
-        consumed,
-        total
-      };
+      try {
+        // Wait for dynamic content to render
+        await new Promise(r => setTimeout(r, 4500));
+
+        const data = await scraperWin.webContents.executeJavaScript(`
+          (() => {
+            const bodyText = document.body.innerText;
+            const billedMatch = bodyText.match(/\\$[\\d,]+\\.\\d{2}/);
+            const billed = billedMatch ? billedMatch[0] : '$0.00';
+            
+            const usageMatch = bodyText.match(/(\\d{1,})\\s+of\\s+(\\d{1,})/i);
+            let consumed = '0';
+            let total = '300';
+            
+            if (usageMatch) {
+              consumed = usageMatch[1];
+              total = usageMatch[2];
+            } else {
+              const standaloneMatch = bodyText.match(/(\\d{1,})\\s+consumed/i);
+              if (standaloneMatch) consumed = standaloneMatch[1];
+            }
+
+            return {
+              billed,
+              consumed,
+              total,
+              lastUpdated: new Date().toISOString()
+            };
+          })()
+        `);
+
+        scraperWin.destroy();
+        resolve(data);
+      } catch (err) {
+        if (!scraperWin.isDestroyed()) scraperWin.destroy();
+        reject(err);
+      }
     });
 
-    await browser.close();
-
-    return {
-      ...data,
-      lastUpdated: new Date().toISOString()
-    };
-
-  } catch (error) {
-    if (browser) await browser.close();
-    console.error('Scraping error:', error);
-    throw error;
-  }
-})
+    setTimeout(() => {
+      if (!scraperWin.isDestroyed()) {
+        scraperWin.destroy();
+        reject(new Error('TIMEOUT'));
+      }
+    }, 45000);
+  });
+});

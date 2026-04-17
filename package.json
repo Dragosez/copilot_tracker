@@ -17,11 +17,12 @@
   "homepage": "https://github.com/Dragosez/copilot-tracker",
   "build": {
     "appId": "com.dragosez.copilot-tracker",
-    "productName": "Copilot Tracker",
+    "productName": "CopilotTracker",
     "linux": {
       "target": ["deb"],
       "category": "Utility",
-      "maintainer": "Dragosez <dragos@example.com>"
+      "maintainer": "Dragosez <dragos@example.com>",
+      "icon": "public/icon.png"
     },
     "directories": {
       "output": "release"
