@@ -8,11 +8,12 @@ interface CopilotData {
 }
 
 declare global {
-  interface Window {
+    interface Window {
     electronAPI: {
       getCopilotData: () => Promise<CopilotData>;
       loginWithGitHub: () => Promise<string>;
       onRefreshData: (callback: () => void) => void;
+      onMainProcessMessage: (callback: (message: any) => void) => void;
     }
   }
 }

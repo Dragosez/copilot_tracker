@@ -5,5 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loginWithGitHub: () => ipcRenderer.invoke('get-github-cookies'),
   onRefreshData: (callback: () => void) => {
     ipcRenderer.on('refresh-data', () => callback())
+  },
+  onMainProcessMessage: (callback: (message: any) => void) => {
+    ipcRenderer.on('main-process-message', (_event, message) => callback(message))
   }
 })
