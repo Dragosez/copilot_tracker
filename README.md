@@ -7,7 +7,6 @@ A premium desktop application for Ubuntu that lives in your top bar and tracks y
 ## Features
 - **Seamless Login**: Secure GitHub authentication via internal popup (no manual cookie copying).
 - **Ubuntu Integration**: Stays pinned to the system tray/top bar.
-- **Premium UI**: Modern glassmorphism design with real-time usage metrics.
 - **Automated Scraping**: Uses a background service to fetch your billing data directly from GitHub.
 
 ## Prerequisites
