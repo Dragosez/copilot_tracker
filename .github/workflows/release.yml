@@ -1,0 +1,38 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build .deb package
+        run: |
+          # The script uses dpkg-deb which is native on the runner's Ubuntu image
+          make deb
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: copilot-tracker.deb
+          body: |
+            ## Copilot Tracker (Native Linux)
+            
+            Install this .deb package to get the native topbar indicator with wide horizontal text.
+            
+            ### Installation
+            1. Download `copilot-tracker.deb`
+            2. Open with Software Install or run `sudo apt install ./copilot-tracker.deb`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

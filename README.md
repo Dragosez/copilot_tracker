@@ -1,47 +1,31 @@
-# GitHub Copilot Tracker (Ubuntu)
+# Copilot Tracker (Native Linux Edition)
 
-A premium desktop application for Ubuntu that lives in your top bar and tracks your GitHub Copilot premium usage (Billed vs. Consumed requests).
+A native Linux topbar indicator to track your GitHub Copilot usage and billed amount. 
 
-![GitHub Copilot Tracker](public/icon.png)
+Unlike the Electron version, this native Python implementation supports wide horizontal text in the Ubuntu/GNOME topbar, mimicking the style of system indicators like CPU temperature or fan speed.
 
 ## Features
-- **Seamless Login**: Secure GitHub authentication via internal popup (no manual cookie copying).
-- **Ubuntu Integration**: Stays pinned to the system tray/top bar.
-- **Automated Scraping**: Uses a background service to fetch your billing data directly from GitHub.
+- **Native Topbar Label:** Displays `Usage • Billed` directly in the panel.
+- **Lightweight:** Uses Python and GTK instead of a heavy Chromium-based app.
+- **Native Login:** Uses a native WebKit2 window for GitHub authentication.
+- **Autostart:** Automatically starts when you log into your desktop.
 
-## Prerequisites
-- Ubuntu 20.04+ (or any modern Linux distro)
-- Chrome or Chromium installed (required for scraping service)
+## Installation (Ubuntu/Debian)
 
-## Installation
+1. Clone the repository.
+2. Run the installer:
+   ```bash
+   make install
+   ```
+   *Note: This will ask for your sudo password to install the necessary system libraries (`python3-gi`, `webkit2`, `appindicator`).*
 
-### 1. Download the Installer
-Download the latest `.deb` package from the [Releases](https://github.com/Dragosez/copilot_tracker/releases) page.
+3. Launch it:
+   ```bash
+   copilot-tracker
+   ```
 
-### 2. Install
+## Uninstallation
+To remove the app and its autostart entry:
 ```bash
-sudo dpkg -i copilot-tracker_1.0.0_amd64.deb
+make uninstall
 ```
-
-## Development
-
-### Setup
-```bash
-pnpm install
-```
-
-### Run (Development)
-```bash
-pnpm run dev
-```
-
-### Build (.deb package)
-```bash
-pnpm run electron:build
-```
-
-## How it works
-The app uses Electron to provide the desktop integration and a Puppeteer-based scraper to fetch data from `github.com/settings/billing/premium_stats`. Your credentials are never stored; the app only uses a local session cookie captured during the secure login flow.
-
----
-Created by [Dragosez](https://github.com/Dragosez)
