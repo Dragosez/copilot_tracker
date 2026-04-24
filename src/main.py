@@ -15,6 +15,8 @@ from .config import clear_session
 
 # Constants
 APP_ID = "copilot-tracker"
+# Guide string should be longer than any possible label to reserve enough space in the topbar
+GUIDE_STR = " 0000.0/000 • $000.00 " 
 ICON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", "tray-icon.png"))
 
 class CopilotTrackerApp:
@@ -30,7 +32,7 @@ class CopilotTrackerApp:
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         
         # Initial label
-        self.indicator.set_label(" Loading...", APP_ID)
+        self.indicator.set_label(" Loading...", GUIDE_STR)
         
         # Build menu
         self.menu = Gtk.Menu()
@@ -100,7 +102,7 @@ class CopilotTrackerApp:
         return True # Keep timeout alive
 
     def _show_fetching_ui(self):
-        self.indicator.set_label(" Fetching...", APP_ID)
+        self.indicator.set_label(" Fetching...", GUIDE_STR)
         self.item_usage.set_label("Usage: Fetching...")
         self.item_billed.set_label("Billed: Fetching...")
         self.item_time.set_label("Last Checked: Fetching...")
@@ -127,7 +129,8 @@ class CopilotTrackerApp:
             usage_str = f"{formatted_consumed}/{data['total']}"
             billed_str = data['billed']
             
-            self.indicator.set_label(f" {usage_str} • {billed_str}", APP_ID)
+            label_text = f" {usage_str} • {billed_str}"
+            self.indicator.set_label(label_text, GUIDE_STR)
             self.item_usage.set_label(f"Usage: {usage_str} requests")
             self.item_billed.set_label(f"Billed: {billed_str}")
             self.item_time.set_label(f"Last Checked: {datetime.now().strftime('%I:%M %p')}")
@@ -136,7 +139,7 @@ class CopilotTrackerApp:
             self.update_ui_error("Error")
 
     def update_ui_error(self, message):
-        self.indicator.set_label(f" {message}", APP_ID)
+        self.indicator.set_label(f" {message}", GUIDE_STR)
         self.item_usage.set_label(message)
         self.item_billed.set_label("Billed: ...")
         self.item_time.set_label("Last Checked: ...")

@@ -21,25 +21,13 @@ def get_copilot_data():
             raise Exception("AUTH_EXPIRED")
 
         html = response.text
-        soup = BeautifulSoup(html, "html.parser")
-        body_text = soup.get_text()
-
-        # 1. Extract billed amount
-        billed = "$0.00"
-        prices = re.findall(r"\$[\d,]+\.\d{2}", body_text)
-        for price in prices:
-            if price not in ["$10.00", "$100.00", "$0.00"]:
-                billed = price
-                break
         
-        additional_match = re.search(r"Additional usage.*?(\$[\d,]+\.\d{2})", body_text, re.IGNORECASE | re.DOTALL)
-        if additional_match:
-            billed = additional_match.group(1)
-
-        # 2. Try to get more precise data from API if customer_id is found
+        # Default values
         consumed = "0"
         total = "300"
-        
+        billed = "$0.00"
+
+        # 1. Try to get data from the internal JSON API (most accurate)
         customer_match = re.search(r'customer_id=(\d+)', html) or re.search(r'"customerId":(\d+)', html)
         if customer_match:
             customer_id = customer_match.group(1)
@@ -56,20 +44,36 @@ def get_copilot_data():
                     json_data = api_res.json()
                     consumed = str(json_data.get("discountQuantity") or json_data.get("netQuantity") or "0")
                     total = str(json_data.get("userPremiumRequestEntitlement") or "300")
-                    if json_data.get("totalAmount") and float(json_data.get("totalAmount")) > 0:
-                        billed = "$" + str(json_data.get("totalAmount"))
+                    
+                    # Get exact billed amount from JSON - use netBilledAmount as seen in GitHub API
+                    total_amt = json_data.get("netBilledAmount") or json_data.get("totalAmount")
+                    if total_amt is not None:
+                        try:
+                            val = float(total_amt)
+                            billed = f"${val:.2f}"
+                        except:
+                            billed = str(total_amt) if str(total_amt).startswith("$") else f"${total_amt}"
+                            
                     return {"consumed": consumed, "total": total, "billed": billed}
-            except:
-                pass
+            except Exception as e:
+                print(f"API Fetch Error: {e}")
 
-        # Fallback scraping
-        patterns = [
+        # 2. Fallback: Precise Scraping
+        soup = BeautifulSoup(html, "html.parser")
+        body_text = soup.get_text()
+
+        # Targeted search for "Additional usage" price
+        additional_match = re.search(r"Additional usage.*?(\$[\d,]+\.\d{2})", body_text, re.IGNORECASE | re.DOTALL)
+        if additional_match:
+            billed = additional_match.group(1)
+
+        usage_patterns = [
             r"([\d,]+(?:\.\d+)?)\s*(?:of|/)\s*([\d,]+(?:\.\d+)?)\s*(?:requests|included)",
             r"([\d,]+(?:\.\d+)?)\s*requests\s*used",
             r"usage\s*([\d,]+(?:\.\d+)?)\s*/\s*([\d,]+(?:\.\d+)?)"
         ]
 
-        for pattern in patterns:
+        for pattern in usage_patterns:
             match = re.search(pattern, body_text, re.IGNORECASE)
             if match:
                 consumed = match.group(1).replace(",", "")
