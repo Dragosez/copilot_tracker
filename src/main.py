@@ -7,7 +7,7 @@ from datetime import datetime
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
-from gi.repository import Gtk, AyatanaAppIndicator3 as AppIndicator, GLib, Gdk
+from gi.repository import Gtk, AyatanaAppIndicator3 as AppIndicator, GLib, Gdk, Gio
 
 from .scraper import get_copilot_data
 from .auth import run_login
@@ -24,6 +24,7 @@ class CopilotTrackerApp:
     def __init__(self):
         self.is_fetching = False
         self.last_fetch_time = 0
+        self.current_label = "Loading..."
         
         self.indicator = AppIndicator.Indicator.new(
             APP_ID,
@@ -33,7 +34,7 @@ class CopilotTrackerApp:
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         
         # Initial label
-        self._safe_set_label(" Loading...")
+        self._safe_set_label(self.current_label)
         
         # Build menu
         self.menu = Gtk.Menu()
@@ -73,21 +74,79 @@ class CopilotTrackerApp:
         self.menu.show_all()
         self.indicator.set_menu(self.menu)
 
+        # Listen for screen unlock (multiple standards to ensure coverage)
+        try:
+            self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            
+            # GNOME specific
+            self.bus.signal_subscribe(
+                "org.gnome.ScreenSaver",
+                "org.gnome.ScreenSaver",
+                "ActiveChanged",
+                "/org/gnome/ScreenSaver",
+                None,
+                Gio.DBusSignalFlags.NONE,
+                self._on_screen_saver_changed,
+                None
+            )
+            
+            # Freedesktop / Standard fallback
+            self.bus.signal_subscribe(
+                "org.freedesktop.ScreenSaver",
+                "org.freedesktop.ScreenSaver",
+                "ActiveChanged",
+                None,
+                None,
+                Gio.DBusSignalFlags.NONE,
+                self._on_screen_saver_changed,
+                None
+            )
+        except Exception as e:
+            print(f"DBus listener skipped: {e}")
+
         # Start periodic updates (every 15 minutes)
         GLib.timeout_add_seconds(15 * 60, self.refresh_data)
+        
+        # UI Heartbeat: Re-apply the label frequently with a "poke" to fix disappearing text
+        GLib.timeout_add_seconds(15, self._ui_heartbeat)
         
         # Initial fetch - Call once and don't loop
         GLib.idle_add(lambda: self.refresh_data() and False)
 
+    def _on_screen_saver_changed(self, conn, sender, path, interface, signal, params, user_data):
+        """Called when screen locks or unlocks"""
+        is_active = params.unpack()[0]
+        if not is_active: # Unlocked
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Screen unlocked, forcing UI refresh...")
+            # Small delay to let the panel settle after wake
+            GLib.timeout_add(2000, lambda: self._ui_heartbeat() and False)
+
+    def _ui_heartbeat(self):
+        """Forcefully re-set the label by toggling a space to bypass extension caching"""
+        label = self.current_label
+        # Toggle a trailing space to force the extension to see a 'change'
+        if label.endswith(" "):
+            new_label = label.rstrip(" ")
+        else:
+            new_label = label + " "
+        
+        self._safe_set_label(new_label)
+        return True
+
     def _safe_set_label(self, label):
         """Helper to set label with error handling and logging"""
-        try:
-            print(f"Setting label: '{label}'")
-            # Some versions of AppIndicator have issues if the label is exactly the same as the guide
-            # or if it contains certain characters. We use a pipe instead of a bullet.
-            self.indicator.set_label(label, GUIDE_STR)
-        except Exception as e:
-            print(f"Error setting label: {e}")
+        self.current_label = label
+        def _do_set():
+            try:
+                # Use a fixed long guide of spaces to ensure the extension reserves enough room
+                self.indicator.set_label(label, " " * 35)
+                # Re-asserting status helps some extensions redraw
+                self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+            except Exception as e:
+                print(f"Error setting label: {e}")
+            return False
+
+        GLib.idle_add(_do_set)
 
     def open_login(self):
         run_login(on_success=lambda: self.refresh_data(force=True))
@@ -102,18 +161,18 @@ class CopilotTrackerApp:
         if not force and (self.is_fetching or (now - self.last_fetch_time < 30)):
             return True
 
-        print("Refreshing data...")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Refreshing data...")
         self.is_fetching = True
         self.last_fetch_time = now
         
-        # Show immediate feedback in both Topbar and Menu
-        GLib.idle_add(self._show_fetching_ui)
+        # Show immediate feedback
+        self._show_fetching_ui()
         
         threading.Thread(target=self._fetch_thread, daemon=True).start()
         return True # Keep timeout alive
 
     def _show_fetching_ui(self):
-        self._safe_set_label(" Fetching...")
+        self._safe_set_label("Fetching...")
         self.item_usage.set_label("Usage: Fetching...")
         self.item_billed.set_label("Billed: Fetching...")
         self.item_time.set_label("Last Checked: Fetching...")
@@ -140,7 +199,7 @@ class CopilotTrackerApp:
             usage_str = f"{formatted_consumed}/{data['total']}"
             billed_str = data['billed']
             
-            label_text = f" {usage_str} | {billed_str}"
+            label_text = f"{usage_str} | {billed_str}"
             self._safe_set_label(label_text)
             self.item_usage.set_label(f"Usage: {usage_str} requests")
             self.item_billed.set_label(f"Billed: {billed_str}")
@@ -150,7 +209,7 @@ class CopilotTrackerApp:
             self.update_ui_error("Error")
 
     def update_ui_error(self, message):
-        self._safe_set_label(f" {message}")
+        self._safe_set_label(message)
         self.item_usage.set_label(message)
         self.item_billed.set_label("Billed: ...")
         self.item_time.set_label("Last Checked: ...")
