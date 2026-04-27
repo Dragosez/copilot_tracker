@@ -140,30 +140,34 @@ class CopilotTrackerApp:
                     print(f"Update available: {VERSION} -> {latest_tag}")
                     self.update_available = True
                     self.latest_version_data = data
-                    GLib.idle_add(lambda: self.item_update.set_label(f"Update to v{latest_tag} Available!"))
+                    GLib.idle_add(lambda: self.item_update.set_label(f"Update to {latest_tag} Available!"))
                 else:
                     print(f"Already on latest version: {VERSION}")
         except Exception as e:
             print(f"Update check failed: {e}")
 
     def _is_newer(self, latest, current):
+        # Normalize by removing 'v' if present for comparison
+        l = latest.replace("v", "")
+        c = current.replace("v", "")
         try:
-            l_parts = [int(p) for p in latest.split(".")]
-            c_parts = [int(p) for p in current.split(".")]
+            l_parts = [int(p) for p in l.split(".")]
+            c_parts = [int(p) for p in c.split(".")]
             return l_parts > c_parts
         except:
-            return latest != current
+            return l != c
 
     def _on_update_clicked(self, _):
         if not self.update_available or not self.latest_version_data:
             return
 
+        version_name = self.latest_version_data['tag_name']
         dialog = Gtk.MessageDialog(
             transient_for=None,
             flags=0,
             message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.YES_NO,
-            text=f"New version v{self.latest_version_data['tag_name']} is available!"
+            text=f"New version {version_name} is available!"
         )
         dialog.format_secondary_text("Would you like to download and install it now?")
         response = dialog.run()
