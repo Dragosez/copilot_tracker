@@ -2,6 +2,8 @@ import os
 import sys
 import threading
 import time
+import subprocess
+import requests
 from datetime import datetime
 
 import gi
@@ -15,6 +17,8 @@ from .config import clear_session
 
 # Constants
 APP_ID = "copilot-tracker"
+VERSION = "1.0.1"
+REPO_URL = "https://api.github.com/repos/Dragosez/copilot_tracker/releases/latest"
 # Guide string should be longer than any possible label to reserve enough space in the topbar
 # Using a generous guide to prevent the label from disappearing if it expands
 GUIDE_STR = " 0000.0/0000 | $000.00 " 
@@ -25,6 +29,8 @@ class CopilotTrackerApp:
         self.is_fetching = False
         self.last_fetch_time = 0
         self.current_label = "Loading..."
+        self.update_available = False
+        self.latest_version_data = None
         
         self.indicator = AppIndicator.Indicator.new(
             APP_ID,
@@ -50,6 +56,12 @@ class CopilotTrackerApp:
         self.item_time = Gtk.MenuItem(label="Last Checked: ...")
         self.item_time.set_sensitive(False)
         self.menu.append(self.item_time)
+        
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        self.item_update = Gtk.MenuItem(label=f"Version: {VERSION}")
+        self.item_update.connect("activate", self._on_update_clicked)
+        self.menu.append(self.item_update)
         
         self.menu.append(Gtk.SeparatorMenuItem())
         
@@ -112,6 +124,90 @@ class CopilotTrackerApp:
         
         # Initial fetch - Call once and don't loop
         GLib.idle_add(lambda: self.refresh_data() and False)
+
+        # Check for updates in background
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
+
+    def _check_for_updates(self):
+        try:
+            print(f"Checking for updates at {REPO_URL}...")
+            response = requests.get(REPO_URL, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                latest_tag = data.get("tag_name", "").replace("v", "")
+                
+                if self._is_newer(latest_tag, VERSION):
+                    print(f"Update available: {VERSION} -> {latest_tag}")
+                    self.update_available = True
+                    self.latest_version_data = data
+                    GLib.idle_add(lambda: self.item_update.set_label(f"Update to v{latest_tag} Available!"))
+                else:
+                    print(f"Already on latest version: {VERSION}")
+        except Exception as e:
+            print(f"Update check failed: {e}")
+
+    def _is_newer(self, latest, current):
+        try:
+            l_parts = [int(p) for p in latest.split(".")]
+            c_parts = [int(p) for p in current.split(".")]
+            return l_parts > c_parts
+        except:
+            return latest != current
+
+    def _on_update_clicked(self, _):
+        if not self.update_available or not self.latest_version_data:
+            return
+
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text=f"New version v{self.latest_version_data['tag_name']} is available!"
+        )
+        dialog.format_secondary_text("Would you like to download and install it now?")
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.YES:
+            threading.Thread(target=self._perform_update, daemon=True).start()
+
+    def _perform_update(self):
+        try:
+            GLib.idle_add(lambda: self.item_update.set_label("Updating..."))
+            
+            # Find .deb asset
+            assets = self.latest_version_data.get("assets", [])
+            deb_url = next((a["browser_download_url"] for a in assets if a["name"].endswith(".deb")), None)
+            
+            if not deb_url:
+                raise Exception("No .deb package found in the latest release.")
+
+            print(f"Downloading update from {deb_url}...")
+            temp_path = "/tmp/copilot-tracker-update.deb"
+            
+            with requests.get(deb_url, stream=True) as r:
+                r.raise_for_status()
+                with open(temp_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+            print("Installing update via pkexec...")
+            # Use pkexec to prompt for password and install the deb
+            cmd = f'pkexec dpkg -i {temp_path}'
+            process = subprocess.Popen(cmd, shell=True)
+            process.wait()
+
+            if process.returncode == 0:
+                print("Update installed successfully. Restarting...")
+                # Restart the app
+                os.execv(sys.executable, ['python3'] + sys.argv)
+            else:
+                raise Exception(f"Installation failed with exit code {process.returncode}")
+
+        except Exception as e:
+            print(f"Update error: {e}")
+            GLib.idle_add(lambda: self.item_update.set_label(f"Update Failed: {str(e)[:20]}..."))
 
     def _on_screen_saver_changed(self, conn, sender, path, interface, signal, params, user_data):
         """Called when screen locks or unlocks"""
