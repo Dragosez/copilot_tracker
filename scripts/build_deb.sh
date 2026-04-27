@@ -4,15 +4,15 @@ set -e
 APP_NAME="copilot-tracker"
 # Use version from argument if provided, otherwise default or extract from src/main.py
 if [ ! -z "$1" ]; then
-    # Remove 'v' prefix if present
-    VERSION=$(echo $1 | sed 's/^v//')
-    echo "Using provided version: $VERSION"
+    # Remove any non-digit characters from the start (like 'v' or 'v.')
+    # to ensure it starts with a digit as required by dpkg
+    VERSION=$(echo $1 | sed 's/^[^0-9]*//')
+    echo "Using cleaned version: $VERSION"
     # Update VERSION in src/main.py to match
-    # This regex is more robust: it handles spaces around the = sign
     sed -i "s/^VERSION\s*=\s*\".*\"/VERSION = \"$VERSION\"/" src/main.py
 else
-    # Extract version from src/main.py if not provided
-    VERSION=$(grep "^VERSION =" src/main.py | cut -d '"' -f 2)
+    # Extract version from src/main.py if not provided - handle spaces flexibly
+    VERSION=$(grep -E "^VERSION\s*=" src/main.py | head -n 1 | cut -d '"' -f 2)
     echo "Using version from src/main.py: $VERSION"
 fi
 
