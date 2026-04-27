@@ -22,8 +22,8 @@ jobs:
 
       - name: Build .deb package
         run: |
-          # The script uses dpkg-deb which is native on the runner's Ubuntu image
-          make deb
+          # Pass the tag name (e.g., v1.0.3) to the make command
+          make deb VERSION=${{ github.ref_name }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

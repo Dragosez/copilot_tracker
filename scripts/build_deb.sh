@@ -2,7 +2,19 @@
 set -e
 
 APP_NAME="copilot-tracker"
-VERSION="1.1.0"
+# Use version from argument if provided, otherwise default or extract from src/main.py
+if [ ! -z "$1" ]; then
+    # Remove 'v' prefix if present
+    VERSION=$(echo $1 | sed 's/^v//')
+    echo "Using provided version: $VERSION"
+    # Update VERSION in src/main.py to match
+    sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" src/main.py
+else
+    # Extract version from src/main.py if not provided
+    VERSION=$(grep "^VERSION =" src/main.py | cut -d '"' -f 2)
+    echo "Using version from src/main.py: $VERSION"
+fi
+
 BUILD_DIR="build/deb"
 STAGED_DIR="$BUILD_DIR/$APP_NAME-$VERSION"
 

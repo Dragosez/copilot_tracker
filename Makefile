@@ -32,4 +32,4 @@ uninstall:
 
 .PHONY: deb
 deb:
-	@bash scripts/build_deb.sh
+	@bash scripts/build_deb.sh $(VERSION)

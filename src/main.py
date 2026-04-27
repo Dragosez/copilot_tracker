@@ -17,7 +17,7 @@ from .config import clear_session
 
 # Constants
 APP_ID = "copilot-tracker"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 REPO_URL = "https://api.github.com/repos/Dragosez/copilot_tracker/releases/latest"
 # Guide string should be longer than any possible label to reserve enough space in the topbar
 # Using a generous guide to prevent the label from disappearing if it expands
