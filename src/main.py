@@ -16,7 +16,8 @@ from .config import clear_session
 # Constants
 APP_ID = "copilot-tracker"
 # Guide string should be longer than any possible label to reserve enough space in the topbar
-GUIDE_STR = " 0000.0/000 • $000.00 " 
+# Using a generous guide to prevent the label from disappearing if it expands
+GUIDE_STR = " 0000.0/0000 | $000.00 " 
 ICON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", "tray-icon.png"))
 
 class CopilotTrackerApp:
@@ -32,7 +33,7 @@ class CopilotTrackerApp:
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
         
         # Initial label
-        self.indicator.set_label(" Loading...", GUIDE_STR)
+        self._safe_set_label(" Loading...")
         
         # Build menu
         self.menu = Gtk.Menu()
@@ -78,6 +79,16 @@ class CopilotTrackerApp:
         # Initial fetch - Call once and don't loop
         GLib.idle_add(lambda: self.refresh_data() and False)
 
+    def _safe_set_label(self, label):
+        """Helper to set label with error handling and logging"""
+        try:
+            print(f"Setting label: '{label}'")
+            # Some versions of AppIndicator have issues if the label is exactly the same as the guide
+            # or if it contains certain characters. We use a pipe instead of a bullet.
+            self.indicator.set_label(label, GUIDE_STR)
+        except Exception as e:
+            print(f"Error setting label: {e}")
+
     def open_login(self):
         run_login(on_success=lambda: self.refresh_data(force=True))
 
@@ -102,7 +113,7 @@ class CopilotTrackerApp:
         return True # Keep timeout alive
 
     def _show_fetching_ui(self):
-        self.indicator.set_label(" Fetching...", GUIDE_STR)
+        self._safe_set_label(" Fetching...")
         self.item_usage.set_label("Usage: Fetching...")
         self.item_billed.set_label("Billed: Fetching...")
         self.item_time.set_label("Last Checked: Fetching...")
@@ -113,7 +124,7 @@ class CopilotTrackerApp:
             GLib.idle_add(self.update_ui, data)
         except Exception as e:
             error_msg = str(e)
-            print(f"Error: {error_msg}")
+            print(f"Error in fetch thread: {error_msg}")
             if "AUTH_EXPIRED" in error_msg:
                 GLib.idle_add(self.update_ui_error, "Login Required")
             else:
@@ -129,8 +140,8 @@ class CopilotTrackerApp:
             usage_str = f"{formatted_consumed}/{data['total']}"
             billed_str = data['billed']
             
-            label_text = f" {usage_str} • {billed_str}"
-            self.indicator.set_label(label_text, GUIDE_STR)
+            label_text = f" {usage_str} | {billed_str}"
+            self._safe_set_label(label_text)
             self.item_usage.set_label(f"Usage: {usage_str} requests")
             self.item_billed.set_label(f"Billed: {billed_str}")
             self.item_time.set_label(f"Last Checked: {datetime.now().strftime('%I:%M %p')}")
@@ -139,7 +150,7 @@ class CopilotTrackerApp:
             self.update_ui_error("Error")
 
     def update_ui_error(self, message):
-        self.indicator.set_label(f" {message}", GUIDE_STR)
+        self._safe_set_label(f" {message}")
         self.item_usage.set_label(message)
         self.item_billed.set_label("Billed: ...")
         self.item_time.set_label("Last Checked: ...")
