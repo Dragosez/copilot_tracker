@@ -8,7 +8,8 @@ if [ ! -z "$1" ]; then
     VERSION=$(echo $1 | sed 's/^v//')
     echo "Using provided version: $VERSION"
     # Update VERSION in src/main.py to match
-    sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" src/main.py
+    # This regex is more robust: it handles spaces around the = sign
+    sed -i "s/^VERSION\s*=\s*\".*\"/VERSION = \"$VERSION\"/" src/main.py
 else
     # Extract version from src/main.py if not provided
     VERSION=$(grep "^VERSION =" src/main.py | cut -d '"' -f 2)

@@ -25,6 +25,15 @@ jobs:
           # Pass the tag name (e.g., v1.0.3) to the make command
           make deb VERSION=${{ github.ref_name }}
 
+      - name: Commit version bump
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add src/main.py
+          # Only commit if there are changes to avoid error
+          git diff --quiet && git diff --staged --quiet || git commit -m "Bump version to ${{ github.ref_name }} [skip ci]"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
